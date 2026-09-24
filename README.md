@@ -126,6 +126,8 @@ The score goes from 1 to 10. It's based on three things:
 
 If bitrate or sample rate isnt in the file's metadata, I use 0.5 (neutral) so I'm not punishing files unfairly.
 
+**Why these signals?** I picked bitrate, sample rate, and file density because they're the most reliable indicators you can get without doing actual audio signal processing. Bitrate directly controls how much audio data is kept after compression — a 320kbps file keeps way more detail than a 64kbps one, so it gets the highest weight. Sample rate decides the highest frequency the audio can reproduce — anything below 44.1kHz (CD standard) is cutting off audible frequencies. File density is more of a sanity check — if a file claims to be 5 minutes long but is only 20KB, something is clearly wrong. These three together give a good enough picture of quality without needing any ML or heavy audio analysis.
+
 ---
 
 ## Outlier flag
@@ -158,6 +160,10 @@ I hash the file's actual bytes with SHA-256 and check if that hash already exist
 - Files are stored localy in `backend/uploads/` — fine for now, would need object storage (S3 etc.) to scale
 - No login or auth — the endpoint is open
 - `music-metadata` v7 is used (not v11) because v11 is ESM-only and would break Jest without extra config
+- Single user / low traffic — the service isn't designed for many concurrent uploads at once
+- Files are treated as trusted content, theres no virus scanning or deep content validation beyond MIME type and extension checks
+- The outlier thresholds (10s, 2h, score < 3.0) are opinionated defaults that might not fit every use case
+- The quality score is a rough estimate based on metadata only, not actual audio signal analysis
 
 ---
 
@@ -166,7 +172,9 @@ I hash the file's actual bytes with SHA-256 and check if that hash already exist
 - **Analysis happens during the upload request**, its fast enough for now (usualy under 100ms), but for a high-traffic service you'd want to push it to a background job queue
 - **SHA-256 only catches exact duplicates**, same audio re-encoded won't be caught; that's a much harder problem
 - **Local file storage**, works for a single server, doesnt work if you scale horizontally
-- **PostgreSQL over SQLite**, slightly more work to set up locally but the right call for production
+- **No file size check on the frontend**, the client lets you pick any size file and you only find out its too big after uploading. Checking before upload would save bandwith
+- **No streaming upload**, the whole file is saved to disk before analysis starts. Streaming would reduce memory pressure for large files but adds complexity
+- **Outlier reason is computed, not stored**, I calculate it on the fly instead of saving it in the database. Keeps the schema simpler but means a small recalculation on duplicate responses
 
 ---
 
@@ -175,6 +183,10 @@ I hash the file's actual bytes with SHA-256 and check if that hash already exist
 - Move audio analysis to a background job so uploads return instantly
 - Add S3/R2 storage instead of local disk
 - Rate limiting on the upload endpoint
-- Upload history page in the UI
+- Upload history page in the UI with a GET /api/uploads endpoint
 - Support for more audio formats (WAV, FLAC)
-- Docker Compose so setup is just one command
+- File size check on the frontend before uploading — show an error right away if the file is over 50MB
+- Upload progress bar so you can see how far along larger files are
+- Drag and drop support on the upload area
+- Cleanup job for orphaned files — if the server crashes mid-upload the file stays on disk with no DB record
+- Sanitize original filenames before storing them — strip special characters
