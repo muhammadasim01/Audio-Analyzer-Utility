@@ -50,11 +50,17 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     const existing = await pool.query('SELECT * FROM audio_files WHERE sha256_hash = $1', [hash]);
     if (existing.rows.length > 0) {
       fs.unlink(filePath, () => {});
-      return res.status(200).json({ ...formatRow(existing.rows[0]), is_duplicate: true });
+      const row = existing.rows[0];
+      const outlierReason = flagOutlier({
+        durationSec: parseFloat(row.duration_sec),
+        qualityScore: parseFloat(row.quality_score),
+        fileSizeBytes: row.file_size,
+      });
+      return res.status(200).json({ ...formatRow(row), is_duplicate: true, outlier_reason: outlierReason });
     }
 
     const analysis = await parseAudioFile(filePath, fileSize);
-    const isOutlier = flagOutlier({
+    const outlierReason = flagOutlier({
       durationSec: analysis.durationSec,
       qualityScore: analysis.qualityScore,
       fileSizeBytes: fileSize,
@@ -70,10 +76,10 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       [hash, originalname, filePath, fileSize,
        analysis.durationSec, analysis.durationFmt,
        analysis.bitrate, analysis.sampleRate,
-       analysis.qualityScore, isOutlier, false]
+       analysis.qualityScore, !!outlierReason, false]
     );
 
-    return res.status(201).json(formatRow(rows[0]));
+    return res.status(201).json({ ...formatRow(rows[0]), outlier_reason: outlierReason });
   } catch (err) {
     fs.unlink(filePath, () => {});
     next(err);
