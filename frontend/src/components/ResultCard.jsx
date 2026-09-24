@@ -1,7 +1,7 @@
 import React from 'react';
 
 export default function ResultCard({ result }) {
-  const { original_name, duration_fmt, duration_sec, quality_score, bitrate, sample_rate, file_size, is_outlier, is_duplicate, sha256_hash, created_at } = result;
+  const { original_name, duration_fmt, duration_sec, quality_score, bitrate, sample_rate, file_size, is_outlier, is_duplicate, outlier_reason, sha256_hash, created_at } = result;
 
   return (
     <div style={{ background: '#fff', borderRadius: 12, padding: '1.5rem', boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}>
@@ -9,13 +9,13 @@ export default function ResultCard({ result }) {
 
       {is_duplicate && (
         <div style={{ background: '#fff8e1', color: '#f57f17', border: '1px solid #ffe082', borderRadius: 6, padding: '0.5rem 0.75rem', marginBottom: '0.75rem', fontSize: '0.875rem', fontWeight: 600 }}>
-          Duplicate — this file was already uploaded
+          Duplicate - this file was already uploaded
         </div>
       )}
 
       {is_outlier && (
         <div style={{ background: '#fce4ec', color: '#c62828', border: '1px solid #ef9a9a', borderRadius: 6, padding: '0.5rem 0.75rem', marginBottom: '0.75rem', fontSize: '0.875rem', fontWeight: 600 }}>
-          Outlier detected — check README for threshold details
+          Outlier detected 
         </div>
       )}
 
