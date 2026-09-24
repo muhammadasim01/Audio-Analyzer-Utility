@@ -1,12 +1,9 @@
-'use strict';
-
 const path = require('path');
 const fs = require('fs');
 const request = require('supertest');
 const { Pool } = require('pg');
 
 const createApp = require('../../src/app');
-const migrate = require('../../src/db/migrate');
 
 const FIXTURE_MP3 = path.join(__dirname, '../fixtures/sample.mp3');
 const TEST_DB_URL = process.env.TEST_DATABASE_URL;
@@ -14,21 +11,13 @@ const TEST_DB_URL = process.env.TEST_DATABASE_URL;
 let pool;
 let app;
 
-// ---------------------------------------------------------------------------
-// Bootstrap
-// ---------------------------------------------------------------------------
-
 beforeAll(async () => {
   if (!TEST_DB_URL) {
-    throw new Error(
-      'TEST_DATABASE_URL is not set. Create a test database and add it to .env'
-    );
+    throw new Error('TEST_DATABASE_URL is not set. Create a test database and add it to .env');
   }
 
   pool = new Pool({ connectionString: TEST_DB_URL });
-  // Run migrations against the test database
   await runMigrations(pool);
-
   app = createApp(pool);
 });
 
@@ -37,7 +26,7 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
-  // Reset state between tests — delete disk files too
+  // clean up uploaded files from disk
   const rows = await pool.query('SELECT file_path FROM audio_files');
   for (const row of rows.rows) {
     if (row.file_path && fs.existsSync(row.file_path)) {
@@ -46,10 +35,6 @@ afterEach(async () => {
   }
   await pool.query('TRUNCATE audio_files RESTART IDENTITY');
 });
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe('POST /api/upload', () => {
   test('returns 201 with analysis result for a valid MP3', async () => {
@@ -70,14 +55,28 @@ describe('POST /api/upload', () => {
     expect(res.body.quality_score).toBeLessThanOrEqual(10);
   });
 
+  test('includes outlier_reason when file is flagged as outlier', async () => {
+    const res = await request(app)
+      .post('/api/upload')
+      .attach('file', FIXTURE_MP3, { contentType: 'audio/mpeg', filename: 'sample.mp3' });
+
+    expect(res.status).toBe(201);
+    // our sample.mp3 is very short so it should be flagged
+    if (res.body.is_outlier) {
+      expect(typeof res.body.outlier_reason).toBe('string');
+      expect(res.body.outlier_reason.length).toBeGreaterThan(0);
+    } else {
+      expect(res.body.outlier_reason).toBeNull();
+    }
+  });
+
   test('returns 200 with is_duplicate:true when same file is uploaded again', async () => {
-    // First upload
     const first = await request(app)
       .post('/api/upload')
       .attach('file', FIXTURE_MP3, { contentType: 'audio/mpeg', filename: 'original.mp3' });
     expect(first.status).toBe(201);
 
-    // Second upload — different filename, same content
+    // second upload — different filename, same content
     const second = await request(app)
       .post('/api/upload')
       .attach('file', FIXTURE_MP3, { contentType: 'audio/mpeg', filename: 'renamed.mp3' });
@@ -87,6 +86,19 @@ describe('POST /api/upload', () => {
     expect(second.body.id).toBe(first.body.id);
   });
 
+  test('duplicate response still includes outlier_reason', async () => {
+    await request(app)
+      .post('/api/upload')
+      .attach('file', FIXTURE_MP3, { contentType: 'audio/mpeg', filename: 'first.mp3' });
+
+    const dup = await request(app)
+      .post('/api/upload')
+      .attach('file', FIXTURE_MP3, { contentType: 'audio/mpeg', filename: 'second.mp3' });
+
+    expect(dup.status).toBe(200);
+    expect(dup.body).toHaveProperty('outlier_reason');
+  });
+
   test('returns 400 when no file is attached', async () => {
     const res = await request(app).post('/api/upload');
     expect(res.status).toBe(400);
@@ -94,7 +106,6 @@ describe('POST /api/upload', () => {
   });
 
   test('returns 400 when a non-MP3 file is uploaded', async () => {
-    // Create a temporary text file
     const tmpPath = path.join(__dirname, '../fixtures/fake.txt');
     fs.writeFileSync(tmpPath, 'not an mp3');
 
@@ -108,7 +119,7 @@ describe('POST /api/upload', () => {
     }
   });
 
-  test('persists exactly one record in the database per unique file', async () => {
+  test('only one record in DB even after uploading the same file twice', async () => {
     await request(app)
       .post('/api/upload')
       .attach('file', FIXTURE_MP3, { contentType: 'audio/mpeg', filename: 'a.mp3' });
@@ -122,16 +133,9 @@ describe('POST /api/upload', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Helper: run migrations inline
-// ---------------------------------------------------------------------------
-
 async function runMigrations(dbPool) {
   const migrationsDir = path.join(__dirname, '../../src/db/migrations');
-  const files = fs
-    .readdirSync(migrationsDir)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
+  const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
 
   const client = await dbPool.connect();
   try {

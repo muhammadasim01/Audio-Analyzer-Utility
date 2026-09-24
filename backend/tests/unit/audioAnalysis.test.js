@@ -78,26 +78,26 @@ describe('flagOutlier', () => {
   const normal = { durationSec: 180, qualityScore: 7.0, fileSizeBytes: 500000 };
 
   test('normal file is not flagged', () => {
-    expect(flagOutlier(normal)).toBe(false);
+    expect(flagOutlier(normal)).toBeNull();
   });
 
   test('too short (< 10s)', () => {
-    expect(flagOutlier({ ...normal, durationSec: 5 })).toBe(true);
+    expect(flagOutlier({ ...normal, durationSec: 5 })).toBeTruthy();
   });
 
   test('too long (> 2h)', () => {
-    expect(flagOutlier({ ...normal, durationSec: 7201 })).toBe(true);
+    expect(flagOutlier({ ...normal, durationSec: 7201 })).toBeTruthy();
   });
 
   test('quality score below 3.0', () => {
-    expect(flagOutlier({ ...normal, qualityScore: 2.9 })).toBe(true);
+    expect(flagOutlier({ ...normal, qualityScore: 2.9 })).toBeTruthy();
   });
 
   test('file smaller than 10KB', () => {
-    expect(flagOutlier({ ...normal, fileSizeBytes: 9999 })).toBe(true);
+    expect(flagOutlier({ ...normal, fileSizeBytes: 9999 })).toBeTruthy();
   });
 
   test('byte density too low (50 bytes / 180s)', () => {
-    expect(flagOutlier({ ...normal, fileSizeBytes: 50 })).toBe(true);
+    expect(flagOutlier({ ...normal, fileSizeBytes: 50 })).toBeTruthy();
   });
 });
